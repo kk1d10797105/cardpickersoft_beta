@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>おみくじ</title>
+
+<style>
+/* 全体 */
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    background: linear-gradient(to bottom, #a0e9ff, #d0f4ff);
+    min-height: 100vh;          /* 画面全体を覆う */
+    background-repeat: no-repeat;
+}
+
+/* 非表示用 */
+.hidden {
+    display: none;
+}
+
+/* ボタン */
+button {
+    padding: 15px 25px;
+    font-size: 18px;
+    background-color: #FFD54F;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+/* ホーム */
+#home {
+    margin-top: 100px;
+}
+
+/* カード画面 */
+#cards {
+    margin-top: 40px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    padding: 20px;
+}
+
+/* カード */
+.card {
+    background: #ff4d4d;
+    height: 100px;
+    border-radius: 10px;
+}
+
+/* 選択されたカード（中央表示用） */
+.selected {
+    width: 200px;
+    height: 120px;
+    margin: 40px auto;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+
+    color: white;
+    font-weight: bold;
+}
+
+/* カード中央移動＆拡大 */
+.card.selected {
+    transition: all 0.5s ease;
+}
+
+/* フェードイン */
+.fade-in {
+    opacity: 0;
+    transition: opacity 3s ease;
+}
+
+.fade-in.show {
+    opacity: 1;
+}
+
+/* カード内の結果 */
+#cardContent {
+    text-align: center;
+}
+</style>
+</head>
+
+<body>
+
+<!-- ホーム画面 -->
+<div id="home">
+    <h1>おみくじ</h1>
+    <button id="startBtn">おみくじを引く</button>
+    <br><br>
+    <button id="adminBtn">管理者モード</button>
+</div>
+
+<!-- カード選択画面 -->
+<div id="cards" class="hidden">
+    <h2>Pick your card!</h2>
+    <div class="grid" id="cardGrid"></div>
+</div>
+
+<!-- 結果画面 -->
+<div id="resultScreen" class="hidden">
+    <div id="selectedCard" class="card selected">
+        <div id="cardContent"></div>
+    </div>
+    <button id="flipBtn">めくる</button>
+</div>
+
+<div id="adminLogin" class="hidden">
+    <input type="password" id="passwordInput">
+    <button id="loginBtn">ログイン</button>
+</div>
+
+<div id="adminScreen" class="hidden">
+    <p style="color:red; font-weight:bold;">
+    At least two results are required.<br>
+    Please ensure that the total of the probabilities adds up to 100.
+</p>
+    <div id="fortuneList"></div>
+    <button id="addRowBtn">＋追加</button>
+    <button id="saveBtn">保存</button>
+</div>
+
+
+
+<script>
+// ========================
+// 画面要素
+// ========================
+const home = document.getElementById("home");
+const cards = document.getElementById("cards");
+const resultScreen = document.getElementById("resultScreen");
+const cardGrid = document.getElementById("cardGrid");
+const selectedCard = document.getElementById("selectedCard");
+const cardContent = document.getElementById("cardContent");
+
+const flipBtn = document.getElementById("flipBtn");
+const startBtn = document.getElementById("startBtn");
+
+// 管理者系
+const adminBtn = document.getElementById("adminBtn");
+const adminLogin = document.getElementById("adminLogin");
+const passwordInput = document.getElementById("passwordInput");
+const loginBtn = document.getElementById("loginBtn");
+const adminScreen = document.getElementById("adminScreen");
+const fortuneList = document.getElementById("fortuneList");
+const addRowBtn = document.getElementById("addRowBtn");
+const saveBtn = document.getElementById("saveBtn");
+
+// ========================
+// おみくじデータ
+// ========================
+let fortunes = [];
+
+// ========================
+// 初期ロード
+// ========================
+window.onload = () => {
+    const saved = localStorage.getItem("omikujiData");
+    if (saved) {
+        fortunes = JSON.parse(saved);
+    } else {
+        fortunes = [
+            { title: "大吉", comment: "最高！", prob: 21 },
+            { title: "中吉", comment: "いい感じ", prob: 21 },
+            { title: "吉", comment: "まあまあ", prob: 21 },
+            { title: "末吉", comment: "ゆっくりいこう", prob: 21 },
+            { title: "凶", comment: "気をつけて", prob: 16 }
+        ];
+    }
+};
+
+// ========================
+// 画面遷移
+// ========================
+startBtn.onclick = () => {
+    home.classList.add("hidden");
+    cards.classList.remove("hidden");
+};
+
+if (adminBtn) {
+    adminBtn.onclick = () => {
+        home.classList.add("hidden");
+        adminLogin.classList.remove("hidden");
+    };
+}
+
+// ========================
+// カード生成（12枚）
+// ========================
+for (let i = 0; i < 12; i++) {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    card.onclick = () => {
+        selectedCard.classList.add("selected");
+        cardContent.classList.add("fade-in"); // 安全に追加
+        cards.classList.add("hidden");
+        resultScreen.classList.remove("hidden");
+    };
+
+    cardGrid.appendChild(card);
+}
+
+// ========================
+// 抽選ロジック（確率対応）
+// ========================
+function getRandomFortune() {
+    let total = 0;
+    fortunes.forEach(f => total += f.prob);
+
+    let rand = Math.random() * total;
+
+    for (let f of fortunes) {
+        if (rand < f.prob) return f;
+        rand -= f.prob;
+    }
+}
+
+// ========================
+// めくるボタン（クーリングタイム付き）
+// ========================
+flipBtn.onclick = () => {
+    flipBtn.disabled = true;
+    cardContent.textContent = "占っています...";
+    cardContent.classList.remove("show");
+
+    setTimeout(() => {
+        const random = getRandomFortune();
+
+        cardContent.innerHTML = `
+            <div style="font-size:24px;">${random.title}</div>
+            <div style="font-size:14px;">${random.comment}</div>
+        `;
+
+        requestAnimationFrame(() => {
+            cardContent.classList.add("show");
+        });
+    }, 500);
+
+    setTimeout(() => {
+        flipBtn.disabled = false;
+    }, 60000);
+};
+
+// ========================
+// 管理者ログイン（パスコード）
+// ========================
+const correctPassword = "5297";
+
+loginBtn.onclick = () => {
+    if (passwordInput.value === correctPassword) {
+        adminLogin.classList.add("hidden");
+        adminScreen.classList.remove("hidden");
+        loadAdminData();
+    } else {
+        alert("パスコードが違います");
+    }
+};
+
+// ========================
+// 管理画面（CRUD + 確率編集）
+// ========================
+function createRow(data = { title: "", comment: "", prob: 0 }) {
+    const row = document.createElement("div");
+
+    row.innerHTML = `
+        <input class="title" value="${data.title}" placeholder="結果">
+        <input class="comment" value="${data.comment}" placeholder="コメント">
+        <input class="prob" type="number" value="${data.prob}" placeholder="確率">
+        <button class="deleteBtn">削除</button>
+        <br><br>
+    `;
+
+    row.querySelector(".deleteBtn").onclick = () => row.remove();
+
+    return row;
+}
+
+function loadAdminData() {
+    fortuneList.innerHTML = "";
+
+    fortunes.forEach(f => {
+        fortuneList.appendChild(createRow(f));
+    });
+}
+
+addRowBtn.onclick = () => {
+    fortuneList.appendChild(createRow());
+};
+
+saveBtn.onclick = () => {
+    const rows = document.querySelectorAll("#fortuneList > div");
+    const data = [];
+
+    rows.forEach(row => {
+        const title = row.querySelector(".title").value;
+        const comment = row.querySelector(".comment").value;
+        const prob = Number(row.querySelector(".prob").value);
+
+        if (title && prob > 0) {
+            data.push({ title, comment, prob });
+        }
+    });
+
+    fortunes = data;
+    localStorage.setItem("omikujiData", JSON.stringify(data));
+
+    alert("保存しました！");
+
+saveBtn.onclick = () => {
+    const rows = document.querySelectorAll("#fortuneList > div");
+    const data = [];
+    let totalProb = 0;
+
+    rows.forEach(row => {
+        const title = row.querySelector(".title").value;
+        const comment = row.querySelector(".comment").value;
+        const prob = Number(row.querySelector(".prob").value);
+
+        if (title && prob > 0) {
+            data.push({ title, comment, prob });
+            totalProb += prob;
+        }
+    });
+
+    // 条件チェック
+    if (data.length < 2) {
+        alert("At least two results are required.");
+        return;
+    }
+
+    if (totalProb !== 100) {
+        alert("Please ensure that the total of the probabilities adds up to 100.");
+        return;
+    }
+
+    fortunes = data;
+    localStorage.setItem("omikujiData", JSON.stringify(data));
+
+    alert("保存しました！");
+
+};
+};
+</script>
+
+</body>
+</html>
